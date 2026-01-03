@@ -44,8 +44,8 @@ jobs:
 
       - name: Download Codec2 source
         run: |
-          wget -q https://github.com/drowe67/codec2/archive/refs/tags/v${{ env.CODEC2_VERSION }}.tar.gz
-          tar xzf v${{ env.CODEC2_VERSION }}.tar.gz
+          curl -sL -o codec2.tar.gz https://github.com/drowe67/codec2/archive/refs/tags/v${{ env.CODEC2_VERSION }}.tar.gz
+          tar xzf codec2.tar.gz
           mv codec2-${{ env.CODEC2_VERSION }} codec2-src
 
       - name: Download and prepare pycodec2 source
