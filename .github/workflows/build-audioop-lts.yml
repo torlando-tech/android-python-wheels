@@ -40,8 +40,8 @@ jobs:
       - name: Download audioop-lts source
         run: |
           pip download --no-binary :all: --no-deps audioop-lts==${{ env.AUDIOOP_VERSION }}
-          tar xzf audioop*.tar.gz
-          mv audioop* audioop-src
+          tar xzf audioop_lts-*.tar.gz
+          mv audioop_lts-*/ audioop-src
           ls -la audioop-src/
 
       - name: Create pyproject.toml for cibuildwheel
