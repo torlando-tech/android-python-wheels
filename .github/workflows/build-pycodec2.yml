@@ -83,10 +83,13 @@ jobs:
 
           before-all = """
           # Build Codec2 for Android
-          cd /project/codec2-src
-          mkdir -p build-android && cd build-android
+          export CODEC2_BUILD=$PWD/codec2-build
+          export CODEC2_INSTALL=$PWD/codec2-install
 
-          cmake .. \
+          cd codec2-src
+          mkdir -p $CODEC2_BUILD && cd $CODEC2_BUILD
+
+          cmake $OLDPWD \
               -G Ninja \
               -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
               -DANDROID_ABI=$ANDROID_ABI \
@@ -96,22 +99,21 @@ jobs:
               -DUNITTEST=OFF \
               -DINSTALL_EXAMPLES=OFF \
               -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_INSTALL_PREFIX=/project/codec2-install
+              -DCMAKE_INSTALL_PREFIX=$CODEC2_INSTALL
 
           ninja
           ninja install
           """
 
-          environment = { LIBRARY_PATH = "/project/codec2-install/lib", C_INCLUDE_PATH = "/project/codec2-install/include", CPLUS_INCLUDE_PATH = "/project/codec2-install/include", LDFLAGS = "-L/project/codec2-install/lib", CFLAGS = "-I/project/codec2-install/include" }
+          environment = { LIBRARY_PATH = "{project}/codec2-install/lib", C_INCLUDE_PATH = "{project}/codec2-install/include", CPLUS_INCLUDE_PATH = "{project}/codec2-install/include", LDFLAGS = "-L{project}/codec2-install/lib", CFLAGS = "-I{project}/codec2-install/include" }
 
           repair-wheel-command = """
           # Bundle libcodec2.so into the wheel
-          wheel_dir=$(dirname {wheel})
           unzip -q {wheel} -d wheel_tmp
 
           pkg_dir=$(find wheel_tmp -name "pycodec2" -type d | head -1)
           if [ -n "$pkg_dir" ]; then
-              cp /project/codec2-install/lib/libcodec2.so* "$pkg_dir/"
+              cp {project}/codec2-install/lib/libcodec2.so* "$pkg_dir/" || true
           fi
 
           cd wheel_tmp
