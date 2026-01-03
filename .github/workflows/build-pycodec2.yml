@@ -163,7 +163,18 @@ jobs:
 
           pkg_dir=$(find wheel_tmp -name "pycodec2" -type d | head -1)
           if [ -n "$pkg_dir" ]; then
-              cp /tmp/codec2-install/lib/libcodec2.so* "$pkg_dir/" || echo "Warning: libcodec2.so not found"
+              cp /tmp/codec2-install/lib/libcodec2.so "$pkg_dir/" || echo "Warning: libcodec2.so not found"
+
+              # Update RECORD file with libcodec2.so entry
+              dist_info=$(find wheel_tmp -name "*.dist-info" -type d | head -1)
+              if [ -n "$dist_info" ] && [ -f "$pkg_dir/libcodec2.so" ]; then
+                  so_hash=$(sha256sum "$pkg_dir/libcodec2.so" | cut -d' ' -f1)
+                  so_size=$(stat -c%s "$pkg_dir/libcodec2.so")
+                  # Convert hex to base64url for wheel RECORD format
+                  so_hash_b64=$(echo -n "$so_hash" | xxd -r -p | base64 | tr '+/' '-_' | tr -d '=')
+                  # Insert before the final RECORD line
+                  sed -i "/^.*RECORD,,$/i pycodec2/libcodec2.so,sha256=$so_hash_b64,$so_size" "$dist_info/RECORD"
+              fi
           fi
 
           cd wheel_tmp
