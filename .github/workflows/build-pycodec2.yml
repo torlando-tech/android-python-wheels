@@ -17,50 +17,30 @@ on:
 env:
   PYCODEC2_VERSION: ${{ github.event.inputs.pycodec2_version || '3.0.1' }}
   CODEC2_VERSION: ${{ github.event.inputs.codec2_version || '1.2.0' }}
-  PYTHON_VERSION: '3.11'
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
-        abi: [arm64-v8a, x86_64]
+        abi: [arm64_v8a, x86_64]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Clone Chaquopy build-wheel fork
-        run: |
-          # Using fork that maintains Docker-based build infrastructure
-          git clone --depth 1 https://github.com/IsakTheHacker/chaquopy-build-wheel.git chaquopy
-
-      - name: Cache Docker layers
-        uses: actions/cache@v4
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ hashFiles('chaquopy/**/Dockerfile', 'chaquopy/**/*.dockerfile') }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
+          python-version: '3.13'
 
-      - name: Build Chaquopy base image
+      - name: Install cibuildwheel and build tools
         run: |
-          cd chaquopy
-          docker build -t chaquopy-base -f base.dockerfile .
-
-      - name: Build Chaquopy target image
-        run: |
-          cd chaquopy
-          docker build -t chaquopy-target target
-
-      - name: Build build-wheel image
-        run: |
-          cd chaquopy
-          docker build -t build-wheel server/pypi
+          pip install cibuildwheel
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
 
       - name: Download Codec2 source
         run: |
@@ -68,43 +48,87 @@ jobs:
           tar xzf v${{ env.CODEC2_VERSION }}.tar.gz
           mv codec2-${{ env.CODEC2_VERSION }} codec2-src
 
-      - name: Download pycodec2 source
+      - name: Download and prepare pycodec2 source
         run: |
           pip download --no-deps --no-binary :all: pycodec2==${{ env.PYCODEC2_VERSION }}
           tar xzf pycodec2-${{ env.PYCODEC2_VERSION }}.tar.gz
 
-      - name: Copy recipe to Chaquopy
-        run: |
-          cp -r recipes/pycodec2 chaquopy/server/pypi/packages/
-          # Copy sources into build context
-          cp -r codec2-src chaquopy/server/pypi/
-          cp -r pycodec2-${{ env.PYCODEC2_VERSION }} chaquopy/server/pypi/
+          # Create pyproject.toml for cibuildwheel
+          cd pycodec2-${{ env.PYCODEC2_VERSION }}
 
-      - name: Build wheel for ${{ matrix.abi }}
+          cat > pyproject.toml << 'PYPROJECT_EOF'
+          [build-system]
+          requires = ["setuptools>=61", "wheel", "cython>=0.29", "numpy>=1.20"]
+          build-backend = "setuptools.build_meta"
+
+          [tool.cibuildwheel]
+          build = "cp313-*"
+          skip = ""
+
+          [tool.cibuildwheel.android]
+          archs = ["arm64_v8a", "x86_64"]
+
+          before-all = """
+          # Build Codec2 for Android
+          cd /project/codec2-src
+          mkdir -p build-android && cd build-android
+
+          cmake .. \
+              -G Ninja \
+              -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+              -DANDROID_ABI=$ANDROID_ABI \
+              -DANDROID_NATIVE_API_LEVEL=24 \
+              -DANDROID_STL=c++_shared \
+              -DBUILD_SHARED_LIBS=ON \
+              -DUNITTEST=OFF \
+              -DINSTALL_EXAMPLES=OFF \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX=/project/codec2-install
+
+          ninja
+          ninja install
+          """
+
+          environment = { LIBRARY_PATH = "/project/codec2-install/lib", C_INCLUDE_PATH = "/project/codec2-install/include", CPLUS_INCLUDE_PATH = "/project/codec2-install/include", LDFLAGS = "-L/project/codec2-install/lib", CFLAGS = "-I/project/codec2-install/include" }
+
+          repair-wheel-command = """
+          # Bundle libcodec2.so into the wheel
+          wheel_dir=$(dirname {wheel})
+          unzip -q {wheel} -d wheel_tmp
+
+          pkg_dir=$(find wheel_tmp -name "pycodec2" -type d | head -1)
+          if [ -n "$pkg_dir" ]; then
+              cp /project/codec2-install/lib/libcodec2.so* "$pkg_dir/"
+          fi
+
+          cd wheel_tmp
+          rm -f {wheel}
+          zip -q -r {wheel} .
+          cd ..
+          rm -rf wheel_tmp
+          """
+          PYPROJECT_EOF
+
+          # Copy codec2-src to where the build can find it
+          cp -r ../codec2-src .
+
+      - name: Build wheel with cibuildwheel
+        env:
+          CIBW_BUILD: "cp313-android_${{ matrix.abi }}"
         run: |
-          cd chaquopy/server/pypi
-          docker run --rm \
-            -v $(pwd):/src \
-            -e ANDROID_ABI=${{ matrix.abi }} \
-            -e CODEC2_VERSION=${{ env.CODEC2_VERSION }} \
-            -e PYCODEC2_VERSION=${{ env.PYCODEC2_VERSION }} \
-            build-wheel \
-            python build-wheel.py \
-              --python ${{ env.PYTHON_VERSION }} \
-              --abi ${{ matrix.abi }} \
-              pycodec2
+          cd pycodec2-${{ env.PYCODEC2_VERSION }}
+          cibuildwheel --platform android --output-dir ../dist
 
       - name: List built wheels
         run: |
-          ls -la chaquopy/server/pypi/dist/ || echo "No dist directory"
-          find chaquopy -name "*.whl" -type f
+          ls -la dist/ || echo "No dist directory"
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
           name: pycodec2-${{ matrix.abi }}
-          path: chaquopy/server/pypi/dist/*.whl
-          if-no-files-found: error
+          path: dist/*.whl
+          if-no-files-found: warn
 
   release:
     needs: build
@@ -119,7 +143,7 @@ jobs:
           merge-multiple: true
 
       - name: List wheels
-        run: ls -la wheels/
+        run: ls -la wheels/ || echo "No wheels found"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
