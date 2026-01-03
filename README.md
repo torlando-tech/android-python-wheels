@@ -6,7 +6,7 @@ Pre-built Python wheels with native extensions for Android/Chaquopy.
 
 | Package | Version | Python | Description |
 |---------|---------|--------|-------------|
-| pycodec2 | 3.0.1 | 3.13 | Python bindings for Codec2 low-bitrate speech codec |
+| pycodec2 | 4.1.1 | 3.13 | Python bindings for Codec2 low-bitrate speech codec |
 
 ## Usage
 
@@ -15,7 +15,7 @@ Pre-built Python wheels with native extensions for Android/Chaquopy.
 ```groovy
 python {
     pip {
-        install "pycodec2 @ https://github.com/torlando-tech/android-python-wheels/releases/download/v1.0.0/pycodec2-3.0.1-cp313-cp313-android_arm64_v8a.whl"
+        install "pycodec2 @ https://github.com/torlando-tech/android-python-wheels/releases/download/v1.0.0/pycodec2-4.1.1-cp313-cp313-android_arm64_v8a.whl"
     }
 }
 ```
@@ -23,8 +23,8 @@ python {
 ### In requirements.txt
 
 ```
-pycodec2 @ https://github.com/torlando-tech/android-python-wheels/releases/download/v1.0.0/pycodec2-3.0.1-cp313-cp313-android_arm64_v8a.whl ; platform_machine == 'aarch64'
-pycodec2 @ https://github.com/torlando-tech/android-python-wheels/releases/download/v1.0.0/pycodec2-3.0.1-cp313-cp313-android_x86_64.whl ; platform_machine == 'x86_64'
+pycodec2 @ https://github.com/torlando-tech/android-python-wheels/releases/download/v1.0.0/pycodec2-4.1.1-cp313-cp313-android_arm64_v8a.whl ; platform_machine == 'aarch64'
+pycodec2 @ https://github.com/torlando-tech/android-python-wheels/releases/download/v1.0.0/pycodec2-4.1.1-cp313-cp313-android_x86_64.whl ; platform_machine == 'x86_64'
 ```
 
 ## Supported ABIs
@@ -63,9 +63,9 @@ cd android-python-wheels
 wget https://github.com/drowe67/codec2/archive/refs/tags/v1.2.0.tar.gz
 tar xzf v1.2.0.tar.gz && mv codec2-1.2.0 codec2-src
 
-pip download --no-deps --no-binary :all: pycodec2==3.0.1
-tar xzf pycodec2-3.0.1.tar.gz
-cd pycodec2-3.0.1
+pip download --no-deps --no-binary :all: pycodec2==4.1.1
+tar xzf pycodec2-4.1.1.tar.gz
+cd pycodec2-4.1.1
 
 # Copy codec2 source
 cp -r ../codec2-src .
