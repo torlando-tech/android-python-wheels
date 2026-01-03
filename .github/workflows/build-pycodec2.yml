@@ -160,8 +160,8 @@ jobs:
           fi
 
           cd wheel_tmp
-          rm -f {wheel}
-          zip -q -r {wheel} .
+          # Output repaired wheel to {dest_dir} as cibuildwheel expects
+          zip -q -r {dest_dir}/$(basename {wheel}) .
           cd ..
           rm -rf wheel_tmp
           """
