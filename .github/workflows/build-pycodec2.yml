@@ -55,11 +55,19 @@ jobs:
 
       - name: Download and prepare pycodec2 source
         run: |
-          pip download --no-deps --no-binary :all: pycodec2==${{ env.PYCODEC2_VERSION }}
-          tar xzf pycodec2-${{ env.PYCODEC2_VERSION }}.tar.gz
+          # Download from GitHub to get complete source
+          curl -fsSL -H "Accept: application/vnd.github+json" \
+            -o pycodec2.tar.gz \
+            "https://api.github.com/repos/gregorias/pycodec2/tarball/refs/tags/v${{ env.PYCODEC2_VERSION }}"
+          tar xzf pycodec2.tar.gz
+          mv gregorias-pycodec2-* pycodec2-src
+
+          # Verify source structure
+          ls -la pycodec2-src/
+          ls -la pycodec2-src/pycodec2/ || echo "pycodec2 dir not found"
 
           # Create pyproject.toml for cibuildwheel
-          cd pycodec2-${{ env.PYCODEC2_VERSION }}
+          cd pycodec2-src
 
           cat > pyproject.toml << 'PYPROJECT_EOF'
           [build-system]
@@ -121,7 +129,7 @@ jobs:
         env:
           CIBW_BUILD: "cp313-android_${{ matrix.abi }}"
         run: |
-          cd pycodec2-${{ env.PYCODEC2_VERSION }}
+          cd pycodec2-src
           cibuildwheel --platform android --output-dir ../dist
 
       - name: List built wheels
