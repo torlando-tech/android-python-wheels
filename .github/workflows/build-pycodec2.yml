@@ -1,0 +1,129 @@
+name: Build pycodec2 for Android
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      pycodec2_version:
+        description: 'pycodec2 version to build'
+        required: false
+        default: '3.0.1'
+      codec2_version:
+        description: 'Codec2 C library version'
+        required: false
+        default: '1.2.0'
+
+env:
+  PYCODEC2_VERSION: ${{ github.event.inputs.pycodec2_version || '3.0.1' }}
+  CODEC2_VERSION: ${{ github.event.inputs.codec2_version || '1.2.0' }}
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        abi: [arm64-v8a, x86_64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Clone Chaquopy
+        run: |
+          git clone --depth 1 https://github.com/chaquo/chaquopy.git
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('chaquopy/**/Dockerfile', 'chaquopy/**/*.dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build Chaquopy base image
+        run: |
+          cd chaquopy
+          docker build -t chaquopy-base -f base.dockerfile .
+
+      - name: Build Chaquopy target image
+        run: |
+          cd chaquopy
+          docker build -t chaquopy-target target
+
+      - name: Build build-wheel image
+        run: |
+          cd chaquopy
+          docker build -t build-wheel server/pypi
+
+      - name: Download Codec2 source
+        run: |
+          wget -q https://github.com/drowe67/codec2/archive/refs/tags/v${{ env.CODEC2_VERSION }}.tar.gz
+          tar xzf v${{ env.CODEC2_VERSION }}.tar.gz
+          mv codec2-${{ env.CODEC2_VERSION }} codec2-src
+
+      - name: Download pycodec2 source
+        run: |
+          pip download --no-deps --no-binary :all: pycodec2==${{ env.PYCODEC2_VERSION }}
+          tar xzf pycodec2-${{ env.PYCODEC2_VERSION }}.tar.gz
+
+      - name: Copy recipe to Chaquopy
+        run: |
+          cp -r recipes/pycodec2 chaquopy/server/pypi/packages/
+          # Copy sources into build context
+          cp -r codec2-src chaquopy/server/pypi/
+          cp -r pycodec2-${{ env.PYCODEC2_VERSION }} chaquopy/server/pypi/
+
+      - name: Build wheel for ${{ matrix.abi }}
+        run: |
+          cd chaquopy/server/pypi
+          docker run --rm \
+            -v $(pwd):/src \
+            -e ANDROID_ABI=${{ matrix.abi }} \
+            -e CODEC2_VERSION=${{ env.CODEC2_VERSION }} \
+            -e PYCODEC2_VERSION=${{ env.PYCODEC2_VERSION }} \
+            build-wheel \
+            python build-wheel.py \
+              --python ${{ env.PYTHON_VERSION }} \
+              --abi ${{ matrix.abi }} \
+              pycodec2
+
+      - name: List built wheels
+        run: |
+          ls -la chaquopy/server/pypi/dist/ || echo "No dist directory"
+          find chaquopy -name "*.whl" -type f
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pycodec2-${{ matrix.abi }}
+          path: chaquopy/server/pypi/dist/*.whl
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: wheels
+          merge-multiple: true
+
+      - name: List wheels
+        run: ls -la wheels/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: wheels/*.whl
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
