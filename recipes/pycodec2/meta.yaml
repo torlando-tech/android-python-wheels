@@ -1,0 +1,26 @@
+package:
+  name: pycodec2
+  version: "3.0.1"
+
+source:
+  # Source is downloaded by the workflow and copied into build context
+  path: /src/pycodec2-3.0.1
+
+requirements:
+  build:
+    - cython >=0.29
+  host:
+    - python
+    - numpy >=1.20
+    - setuptools
+    - wheel
+  run:
+    - numpy
+
+build:
+  script: build.sh
+
+about:
+  home: https://github.com/gregorias/pycodec2
+  license: Apache-2.0
+  summary: Python bindings for Codec2 speech codec
