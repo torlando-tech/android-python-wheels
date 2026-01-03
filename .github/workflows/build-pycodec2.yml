@@ -82,14 +82,15 @@ jobs:
           archs = ["arm64_v8a", "x86_64"]
 
           before-all = """
-          # Build Codec2 for Android
-          export CODEC2_BUILD=$PWD/codec2-build
-          export CODEC2_INSTALL=$PWD/codec2-install
+          set -ex
+          # Build Codec2 for Android - install to a fixed absolute path
+          export CODEC2_INSTALL=/tmp/codec2-install
+          mkdir -p $CODEC2_INSTALL
 
           cd codec2-src
-          mkdir -p $CODEC2_BUILD && cd $CODEC2_BUILD
+          mkdir -p build && cd build
 
-          cmake $OLDPWD \
+          cmake .. \
               -G Ninja \
               -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
               -DANDROID_ABI=$ANDROID_ABI \
@@ -103,17 +104,20 @@ jobs:
 
           ninja
           ninja install
+          ls -la $CODEC2_INSTALL/lib/
+          ls -la $CODEC2_INSTALL/include/codec2/
           """
 
-          environment = { LIBRARY_PATH = "{project}/codec2-install/lib", C_INCLUDE_PATH = "{project}/codec2-install/include", CPLUS_INCLUDE_PATH = "{project}/codec2-install/include", LDFLAGS = "-L{project}/codec2-install/lib", CFLAGS = "-I{project}/codec2-install/include" }
+          environment = { LIBRARY_PATH = "/tmp/codec2-install/lib", C_INCLUDE_PATH = "/tmp/codec2-install/include", CPLUS_INCLUDE_PATH = "/tmp/codec2-install/include", LDFLAGS = "-L/tmp/codec2-install/lib -lcodec2", CFLAGS = "-I/tmp/codec2-install/include" }
 
           repair-wheel-command = """
+          set -ex
           # Bundle libcodec2.so into the wheel
           unzip -q {wheel} -d wheel_tmp
 
           pkg_dir=$(find wheel_tmp -name "pycodec2" -type d | head -1)
           if [ -n "$pkg_dir" ]; then
-              cp {project}/codec2-install/lib/libcodec2.so* "$pkg_dir/" || true
+              cp /tmp/codec2-install/lib/libcodec2.so* "$pkg_dir/" || echo "Warning: libcodec2.so not found"
           fi
 
           cd wheel_tmp
