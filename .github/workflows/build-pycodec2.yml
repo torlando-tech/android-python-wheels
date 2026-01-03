@@ -44,9 +44,14 @@ jobs:
 
       - name: Download Codec2 source
         run: |
-          curl -sL -o codec2.tar.gz https://github.com/drowe67/codec2/archive/refs/tags/v${{ env.CODEC2_VERSION }}.tar.gz
+          # Use GitHub API to download release tarball (more reliable than web UI)
+          curl -fsSL -H "Accept: application/vnd.github+json" \
+            -o codec2.tar.gz \
+            "https://api.github.com/repos/drowe67/codec2/tarball/v${{ env.CODEC2_VERSION }}"
           tar xzf codec2.tar.gz
-          mv codec2-${{ env.CODEC2_VERSION }} codec2-src
+          # The extracted directory has a different name format from API
+          mv drowe67-codec2-* codec2-src || mv codec2-${{ env.CODEC2_VERSION }} codec2-src
+          ls -la codec2-src/
 
       - name: Download and prepare pycodec2 source
         run: |
