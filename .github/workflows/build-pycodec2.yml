@@ -201,9 +201,9 @@ jobs:
                   init_hash_b64=$(echo -n "$init_hash" | xxd -r -p | base64 | tr '+/' '-_' | tr -d '=')
 
                   # Remove old __init__.py entry and add new ones
-                  sed -i '/pycodec2\/__init__.py/d' "$dist_info/RECORD"
-                  sed -i "/^.*RECORD,,$/i pycodec2/libcodec2.so,sha256=$so_hash_b64,$so_size" "$dist_info/RECORD"
-                  sed -i "/^.*RECORD,,$/i pycodec2/__init__.py,sha256=$init_hash_b64,$init_size" "$dist_info/RECORD"
+                  sed -i '/pycodec2\\/__init__.py/d' "$dist_info/RECORD"
+                  sed -i "/^.*RECORD,,\\$/i pycodec2/libcodec2.so,sha256=$so_hash_b64,$so_size" "$dist_info/RECORD"
+                  sed -i "/^.*RECORD,,\\$/i pycodec2/__init__.py,sha256=$init_hash_b64,$init_size" "$dist_info/RECORD"
               fi
           fi
 
