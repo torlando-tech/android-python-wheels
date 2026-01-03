@@ -142,9 +142,32 @@ jobs:
           # NumPy on Android needs complex.h included for creal/cimag functions
           cd {package}
           if [ -f setup.py ]; then
-              # Add include dirs and compile args to setup.py
-              sed -i 's/Extension(/Extension(extra_compile_args=["-include", "complex.h", "-I\\/tmp\\/codec2-install\\/include"], include_dirs=["\\/tmp\\/codec2-install\\/include"], library_dirs=["\\/tmp\\/codec2-install\\/lib"], libraries=["codec2"], /' setup.py || true
-              cat setup.py
+              # Create a patch script to properly modify setup.py
+              python3 << 'PATCH_SCRIPT'
+import re
+
+with open('setup.py', 'r') as f:
+    content = f.read()
+
+# Add extra_compile_args to Extension
+# Find the Extension call and add our args after the existing kwargs
+new_content = content.replace(
+    'include_dirs=[np.get_include()]',
+    'include_dirs=[np.get_include(), "/tmp/codec2-install/include"], extra_compile_args=["-include", "complex.h"]'
+)
+
+# Also update library_dirs to include our codec2 install path
+new_content = new_content.replace(
+    'library_dirs=["lib_win"] if sys.platform == "win32" else None',
+    'library_dirs=["/tmp/codec2-install/lib"]'
+)
+
+with open('setup.py', 'w') as f:
+    f.write(new_content)
+
+print("Patched setup.py:")
+print(new_content)
+PATCH_SCRIPT
           fi
           """
 
