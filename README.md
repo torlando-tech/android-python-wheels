@@ -15,7 +15,7 @@ Pre-built Python wheels with native extensions for Android/Chaquopy.
 ```groovy
 python {
     pip {
-        install "pycodec2 @ https://github.com/torlando-tech/android-python-wheels/releases/download/v1.0.0/pycodec2-4.1.1-cp313-cp313-android_arm64_v8a.whl"
+        install "pycodec2 @ https://github.com/torlando-tech/android-python-wheels/releases/download/v1.0.0/pycodec2-4.1.1-cp313-cp313-android_21_arm64_v8a.whl"
     }
 }
 ```
@@ -23,8 +23,8 @@ python {
 ### In requirements.txt
 
 ```
-pycodec2 @ https://github.com/torlando-tech/android-python-wheels/releases/download/v1.0.0/pycodec2-4.1.1-cp313-cp313-android_arm64_v8a.whl ; platform_machine == 'aarch64'
-pycodec2 @ https://github.com/torlando-tech/android-python-wheels/releases/download/v1.0.0/pycodec2-4.1.1-cp313-cp313-android_x86_64.whl ; platform_machine == 'x86_64'
+pycodec2 @ https://github.com/torlando-tech/android-python-wheels/releases/download/v1.0.0/pycodec2-4.1.1-cp313-cp313-android_21_arm64_v8a.whl ; platform_machine == 'aarch64'
+pycodec2 @ https://github.com/torlando-tech/android-python-wheels/releases/download/v1.0.0/pycodec2-4.1.1-cp313-cp313-android_21_x86_64.whl ; platform_machine == 'x86_64'
 ```
 
 ## Supported ABIs
