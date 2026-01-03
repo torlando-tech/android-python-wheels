@@ -83,11 +83,14 @@ jobs:
 
           before-all = """
           set -ex
-          # Debug: show all environment variables to find the architecture
-          echo "=== Environment variables ==="
-          env | grep -i android || echo "No ANDROID vars"
-          env | grep -i cibw || echo "No CIBW vars"
-          env | grep -i abi || echo "No ABI vars"
+
+          # Unset build flags that would break the host tool compilation
+          # These are set by CIBW_ENVIRONMENT for pycodec2 build, but break codec2_native build
+          unset LDFLAGS
+          unset CFLAGS
+          unset LIBRARY_PATH
+          unset C_INCLUDE_PATH
+          unset CPLUS_INCLUDE_PATH
 
           # Determine ANDROID_ABI from environment or derive from build identifier
           if [ -z "$ANDROID_ABI" ]; then
