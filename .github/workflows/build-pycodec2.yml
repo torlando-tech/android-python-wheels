@@ -34,10 +34,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.13'
 
       - name: Install cibuildwheel and build tools
         run: |
@@ -82,7 +82,7 @@ jobs:
           version = "4.1.1"
 
           [tool.cibuildwheel]
-          build = "cp311-*"
+          build = "cp313-*"
           skip = ""
 
           [tool.cibuildwheel.android]
@@ -220,7 +220,7 @@ jobs:
 
       - name: Build wheel with cibuildwheel
         env:
-          CIBW_BUILD: "cp311-android_${{ matrix.abi }}"
+          CIBW_BUILD: "cp313-android_${{ matrix.abi }}"
           # Set ANDROID_ABI for CMake (convert underscore to hyphen for arm64)
           ANDROID_ABI: ${{ matrix.abi == 'arm64_v8a' && 'arm64-v8a' || matrix.abi }}
           # Pass all environment variables to cibuildwheel (must include all, not just ANDROID_ABI)
