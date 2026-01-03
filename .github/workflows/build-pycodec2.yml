@@ -8,14 +8,14 @@ on:
       pycodec2_version:
         description: 'pycodec2 version to build'
         required: false
-        default: '3.0.1'
+        default: '4.1.1'
       codec2_version:
         description: 'Codec2 C library version'
         required: false
         default: '1.2.0'
 
 env:
-  PYCODEC2_VERSION: ${{ github.event.inputs.pycodec2_version || '3.0.1' }}
+  PYCODEC2_VERSION: ${{ github.event.inputs.pycodec2_version || '4.1.1' }}
   CODEC2_VERSION: ${{ github.event.inputs.codec2_version || '1.2.0' }}
 
 jobs:
