@@ -161,13 +161,14 @@ jobs:
           # Set ANDROID_ABI for CMake (convert underscore to hyphen for arm64)
           ANDROID_ABI: ${{ matrix.abi == 'arm64_v8a' && 'arm64-v8a' || matrix.abi }}
           # Pass all environment variables to cibuildwheel (must include all, not just ANDROID_ABI)
+          # Note: -include complex.h fixes NumPy Android build issue with creal/cimag
           CIBW_ENVIRONMENT_ANDROID: >-
             ANDROID_ABI=${{ matrix.abi == 'arm64_v8a' && 'arm64-v8a' || matrix.abi }}
             LIBRARY_PATH=/tmp/codec2-install/lib
             C_INCLUDE_PATH=/tmp/codec2-install/include
             CPLUS_INCLUDE_PATH=/tmp/codec2-install/include
             LDFLAGS="-L/tmp/codec2-install/lib -lcodec2"
-            CFLAGS="-I/tmp/codec2-install/include"
+            CFLAGS="-I/tmp/codec2-install/include -include complex.h"
         run: |
           cd pycodec2-src
           cibuildwheel --platform android --output-dir ../dist
