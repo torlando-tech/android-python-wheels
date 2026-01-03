@@ -141,7 +141,8 @@ jobs:
           cd {package}
           if [ -f setup.py ]; then
               # Add codec2 include path and extra_compile_args for complex.h
-              sed -i 's|include_dirs=\\[np.get_include()\\]|include_dirs=[np.get_include(), "/tmp/codec2-install/include"], extra_compile_args=["-include", "complex.h"]|' setup.py
+              # -Wno-implicit-function-declaration: Android NDK bionic's complex.h doesn't properly export creal/cimag at API 21
+              sed -i 's|include_dirs=\\[np.get_include()\\]|include_dirs=[np.get_include(), "/tmp/codec2-install/include"], extra_compile_args=["-include", "complex.h", "-Wno-implicit-function-declaration"]|' setup.py
               # Update library_dirs to point to codec2 install
               sed -i 's|library_dirs=\\["lib_win"\\] if sys.platform == "win32" else None|library_dirs=["/tmp/codec2-install/lib"]|' setup.py
               cat setup.py
