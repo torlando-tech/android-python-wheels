@@ -134,7 +134,19 @@ jobs:
           )
           """
 
-          environment = { LIBRARY_PATH = "/tmp/codec2-install/lib", C_INCLUDE_PATH = "/tmp/codec2-install/include", CPLUS_INCLUDE_PATH = "/tmp/codec2-install/include", LDFLAGS = "-L/tmp/codec2-install/lib -lcodec2", CFLAGS = "-I/tmp/codec2-install/include" }
+          environment = { LIBRARY_PATH = "/tmp/codec2-install/lib", C_INCLUDE_PATH = "/tmp/codec2-install/include", CPLUS_INCLUDE_PATH = "/tmp/codec2-install/include", LDFLAGS = "-L/tmp/codec2-install/lib -lcodec2", CFLAGS = "-I/tmp/codec2-install/include -include complex.h" }
+
+          before-build = """
+          set -ex
+          # Patch setup.py to add extra compile args for Android
+          # NumPy on Android needs complex.h included for creal/cimag functions
+          cd {package}
+          if [ -f setup.py ]; then
+              # Add include dirs and compile args to setup.py
+              sed -i 's/Extension(/Extension(extra_compile_args=["-include", "complex.h", "-I\\/tmp\\/codec2-install\\/include"], include_dirs=["\\/tmp\\/codec2-install\\/include"], library_dirs=["\\/tmp\\/codec2-install\\/lib"], libraries=["codec2"], /' setup.py || true
+              cat setup.py
+          fi
+          """
 
           repair-wheel-command = """
           set -ex
