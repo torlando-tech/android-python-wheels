@@ -84,14 +84,6 @@ jobs:
           before-all = """
           set -ex
 
-          # Unset build flags that would break the host tool compilation
-          # These are set by CIBW_ENVIRONMENT for pycodec2 build, but break codec2_native build
-          unset LDFLAGS
-          unset CFLAGS
-          unset LIBRARY_PATH
-          unset C_INCLUDE_PATH
-          unset CPLUS_INCLUDE_PATH
-
           # Determine ANDROID_ABI from environment or derive from build identifier
           if [ -z "$ANDROID_ABI" ]; then
               # Try to derive from CIBW_BUILD or other sources
@@ -107,29 +99,39 @@ jobs:
           fi
           echo "Using ANDROID_ABI=$ANDROID_ABI"
 
-          # Build Codec2 for Android - install to a fixed absolute path
-          export CODEC2_INSTALL=/tmp/codec2-install
-          mkdir -p $CODEC2_INSTALL
+          # Build Codec2 for Android in a subshell to avoid polluting environment
+          # The subshell allows us to unset LDFLAGS/CFLAGS without affecting the wheel build
+          (
+              # Unset build flags that would break the host tool compilation (codec2_native)
+              unset LDFLAGS
+              unset CFLAGS
+              unset LIBRARY_PATH
+              unset C_INCLUDE_PATH
+              unset CPLUS_INCLUDE_PATH
 
-          cd codec2-src
-          mkdir -p build && cd build
+              export CODEC2_INSTALL=/tmp/codec2-install
+              mkdir -p $CODEC2_INSTALL
 
-          cmake .. \
-              -G Ninja \
-              -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-              -DANDROID_ABI=$ANDROID_ABI \
-              -DANDROID_NATIVE_API_LEVEL=24 \
-              -DANDROID_STL=c++_shared \
-              -DBUILD_SHARED_LIBS=ON \
-              -DUNITTEST=OFF \
-              -DINSTALL_EXAMPLES=OFF \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_INSTALL_PREFIX=$CODEC2_INSTALL
+              cd codec2-src
+              mkdir -p build && cd build
 
-          ninja
-          ninja install
-          ls -la $CODEC2_INSTALL/lib/
-          ls -la $CODEC2_INSTALL/include/codec2/
+              cmake .. \
+                  -G Ninja \
+                  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+                  -DANDROID_ABI=$ANDROID_ABI \
+                  -DANDROID_NATIVE_API_LEVEL=24 \
+                  -DANDROID_STL=c++_shared \
+                  -DBUILD_SHARED_LIBS=ON \
+                  -DUNITTEST=OFF \
+                  -DINSTALL_EXAMPLES=OFF \
+                  -DCMAKE_BUILD_TYPE=Release \
+                  -DCMAKE_INSTALL_PREFIX=$CODEC2_INSTALL
+
+              ninja
+              ninja install
+              ls -la $CODEC2_INSTALL/lib/
+              ls -la $CODEC2_INSTALL/include/codec2/
+          )
           """
 
           environment = { LIBRARY_PATH = "/tmp/codec2-install/lib", C_INCLUDE_PATH = "/tmp/codec2-install/include", CPLUS_INCLUDE_PATH = "/tmp/codec2-install/include", LDFLAGS = "-L/tmp/codec2-install/lib -lcodec2", CFLAGS = "-I/tmp/codec2-install/include" }
