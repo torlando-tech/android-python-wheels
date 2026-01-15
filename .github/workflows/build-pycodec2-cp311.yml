@@ -80,8 +80,7 @@ jobs:
           cd codec2-src
           mkdir -p build && cd build
 
-          # Add flags to fix complex.h issues with Android NDK bionic
-          # -Wno-implicit-function-declaration: bionic's complex.h doesn't properly declare crealf/cimagf/etc
+          # Use API level 24 where complex math functions are available in bionic
           cmake .. \
             -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
@@ -92,8 +91,7 @@ jobs:
             -DUNITTEST=OFF \
             -DINSTALL_EXAMPLES=OFF \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=$CODEC2_INSTALL \
-            -DCMAKE_C_FLAGS="-Wno-implicit-function-declaration"
+            -DCMAKE_INSTALL_PREFIX=$CODEC2_INSTALL
 
           ninja
           ninja install
@@ -101,32 +99,6 @@ jobs:
           echo "CODEC2_INSTALL=$CODEC2_INSTALL" >> $GITHUB_ENV
           ls -la $CODEC2_INSTALL/lib/
           ls -la $CODEC2_INSTALL/include/codec2/
-
-      - name: Download Python 3.11 Android headers and library
-        run: |
-          # Get Chaquopy's Python build for Android
-          CHAQUOPY_VERSION="16.0.0"
-          PYTHON_VERSION="3.11"
-
-          mkdir -p python-android
-          cd python-android
-
-          # Download the target Python from Chaquopy's maven repo
-          # Format: com/chaquo/python/target/{version}/target-{version}-{abi}.zip
-          curl -fsSL -o python-target.zip \
-            "https://chaquo.com/maven/com/chaquo/python/target/$PYTHON_VERSION-$CHAQUOPY_VERSION/target-$PYTHON_VERSION-$CHAQUOPY_VERSION-${{ matrix.abi }}.zip"
-
-          unzip -q python-target.zip
-          ls -la
-
-          # Find the include and lib directories
-          PYTHON_INCLUDE=$(find . -name "Python.h" -exec dirname {} \; | head -1)
-          PYTHON_LIB=$(find . -name "libpython*.so" | head -1)
-
-          echo "PYTHON_INCLUDE=$PWD/$PYTHON_INCLUDE" >> $GITHUB_ENV
-          echo "PYTHON_LIB=$PWD/$PYTHON_LIB" >> $GITHUB_ENV
-          echo "Found Python include: $PYTHON_INCLUDE"
-          echo "Found Python lib: $PYTHON_LIB"
 
       - name: Build pycodec2 extension
         run: |
@@ -140,24 +112,27 @@ jobs:
           fi
 
           TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
-          export CC="$TOOLCHAIN/bin/${COMPILER_PREFIX}21-clang"
-          export CXX="$TOOLCHAIN/bin/${COMPILER_PREFIX}21-clang++"
+          export CC="$TOOLCHAIN/bin/${COMPILER_PREFIX}24-clang"
+          export CXX="$TOOLCHAIN/bin/${COMPILER_PREFIX}24-clang++"
           export AR="$TOOLCHAIN/bin/llvm-ar"
           export STRIP="$TOOLCHAIN/bin/llvm-strip"
 
+          # Get host Python include path (Python C API is stable across platforms)
+          PYTHON_INCLUDE=$(python -c "import sysconfig; print(sysconfig.get_path('include'))")
+          NUMPY_INCLUDE=$(python -c "import numpy; print(numpy.get_include())")
+
           # Set up include/library paths
-          export CFLAGS="-I$CODEC2_INSTALL/include -I$PYTHON_INCLUDE -include complex.h -Wno-implicit-function-declaration -fPIC"
-          export LDFLAGS="-L$CODEC2_INSTALL/lib -L$(dirname $PYTHON_LIB) -lcodec2 -shared"
+          # -fPIC is required for shared libraries on Android
+          export CFLAGS="-I$CODEC2_INSTALL/include -I$PYTHON_INCLUDE -I$NUMPY_INCLUDE -fPIC"
+          export LDFLAGS="-L$CODEC2_INSTALL/lib -lcodec2 -shared"
 
           # Generate the Cython extension
           cd pycodec2
           cython -3 pycodec2.pyx -o pycodec2.c
 
-          # Get numpy include path (host numpy for headers)
-          NUMPY_INCLUDE=$(python -c "import numpy; print(numpy.get_include())")
-
           # Compile the extension
-          $CC $CFLAGS -I$NUMPY_INCLUDE -c pycodec2.c -o pycodec2.o
+          # Note: We don't link against libpython - it's loaded dynamically at runtime by Chaquopy
+          $CC $CFLAGS -c pycodec2.c -o pycodec2.o
           $CC -shared pycodec2.o -o pycodec2.cpython-311-${{ matrix.python_arch }}-linux-android.so \
             -L$CODEC2_INSTALL/lib -lcodec2
 
@@ -165,6 +140,7 @@ jobs:
 
       - name: Create wheel
         run: |
+          mkdir -p dist
           mkdir -p wheel_build/pycodec2
           cd wheel_build
 
@@ -176,48 +152,48 @@ jobs:
 
           # Create __init__.py that pre-loads libcodec2
           cat > pycodec2/__init__.py << 'INIT_EOF'
-          # Pre-load libcodec2.so before importing the extension module
-          import os as _os
-          import ctypes as _ctypes
+# Pre-load libcodec2.so before importing the extension module
+import os as _os
+import ctypes as _ctypes
 
-          _this_dir = _os.path.dirname(_os.path.abspath(__file__))
-          _libcodec2_path = _os.path.join(_this_dir, 'libcodec2.so')
+_this_dir = _os.path.dirname(_os.path.abspath(__file__))
+_libcodec2_path = _os.path.join(_this_dir, 'libcodec2.so')
 
-          if _os.path.exists(_libcodec2_path):
-              try:
-                  _ctypes.CDLL(_libcodec2_path, mode=_ctypes.RTLD_GLOBAL)
-              except OSError as e:
-                  import sys
-                  print(f"Warning: Could not load libcodec2.so: {e}", file=sys.stderr)
+if _os.path.exists(_libcodec2_path):
+    try:
+        _ctypes.CDLL(_libcodec2_path, mode=_ctypes.RTLD_GLOBAL)
+    except OSError as e:
+        import sys
+        print(f"Warning: Could not load libcodec2.so: {e}", file=sys.stderr)
 
-          from .pycodec2 import *
-          INIT_EOF
+from .pycodec2 import *
+INIT_EOF
 
           # Create METADATA
           mkdir -p pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info
           cat > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/METADATA << EOF
-          Metadata-Version: 2.1
-          Name: pycodec2
-          Version: ${{ env.PYCODEC2_VERSION }}
-          Summary: Cython wrapper for codec2
-          EOF
+Metadata-Version: 2.1
+Name: pycodec2
+Version: ${{ env.PYCODEC2_VERSION }}
+Summary: Cython wrapper for codec2
+EOF
 
           cat > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/WHEEL << EOF
-          Wheel-Version: 1.0
-          Generator: manual-build
-          Root-Is-Purelib: false
-          Tag: cp311-cp311-android_24_${{ matrix.abi }}
-          EOF
+Wheel-Version: 1.0
+Generator: manual-build
+Root-Is-Purelib: false
+Tag: cp311-cp311-android_24_${{ matrix.abi }}
+EOF
 
           cat > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/top_level.txt << EOF
-          pycodec2
-          EOF
+pycodec2
+EOF
 
           # Create RECORD (checksums)
           echo "pycodec2/__init__.py,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
           echo "pycodec2/libcodec2.so,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
           for f in pycodec2/*.so; do
-            [ -f "$f" ] && echo "$(basename $f),," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
+            [ -f "$f" ] && echo "pycodec2/$(basename $f),," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
           done
           echo "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/METADATA,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
           echo "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/WHEEL,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
