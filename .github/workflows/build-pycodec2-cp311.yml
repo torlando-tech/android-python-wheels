@@ -86,7 +86,7 @@ jobs:
             -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=${{ matrix.cmake_abi }} \
-            -DANDROID_NATIVE_API_LEVEL=21 \
+            -DANDROID_NATIVE_API_LEVEL=24 \
             -DANDROID_STL=c++_shared \
             -DBUILD_SHARED_LIBS=ON \
             -DUNITTEST=OFF \
@@ -206,7 +206,7 @@ jobs:
           Wheel-Version: 1.0
           Generator: manual-build
           Root-Is-Purelib: false
-          Tag: cp311-cp311-android_21_${{ matrix.abi }}
+          Tag: cp311-cp311-android_24_${{ matrix.abi }}
           EOF
 
           cat > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/top_level.txt << EOF
@@ -225,7 +225,7 @@ jobs:
           echo "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
 
           # Create the wheel
-          WHEEL_NAME="pycodec2-${{ env.PYCODEC2_VERSION }}-cp311-cp311-android_21_${{ matrix.abi }}.whl"
+          WHEEL_NAME="pycodec2-${{ env.PYCODEC2_VERSION }}-cp311-cp311-android_24_${{ matrix.abi }}.whl"
           zip -r "../dist/$WHEEL_NAME" pycodec2 pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info
 
           echo "Built wheel: $WHEEL_NAME"
