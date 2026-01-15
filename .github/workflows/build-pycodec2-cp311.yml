@@ -47,9 +47,9 @@ jobs:
 
       - name: Install build tools
         run: |
-          pip install cython numpy wheel setuptools
+          pip install numpy wheel
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build patchelf
+          sudo apt-get install -y cmake ninja-build
 
       - name: Download Codec2 source
         run: |
@@ -58,14 +58,6 @@ jobs:
             "https://api.github.com/repos/drowe67/codec2/tarball/refs/tags/${{ env.CODEC2_VERSION }}"
           tar xzf codec2.tar.gz
           mv drowe67-codec2-* codec2-src
-
-      - name: Download pycodec2 source
-        run: |
-          curl -fsSL -H "Accept: application/vnd.github+json" \
-            -o pycodec2.tar.gz \
-            "https://api.github.com/repos/gregorias/pycodec2/tarball/refs/tags/v${{ env.PYCODEC2_VERSION }}"
-          tar xzf pycodec2.tar.gz
-          mv gregorias-pycodec2-* pycodec2-src
 
       - name: Set up Android NDK
         run: |
@@ -98,80 +90,152 @@ jobs:
 
           echo "CODEC2_INSTALL=$CODEC2_INSTALL" >> $GITHUB_ENV
           ls -la $CODEC2_INSTALL/lib/
-          ls -la $CODEC2_INSTALL/include/codec2/
 
-      - name: Build pycodec2 extension
+      - name: Create wheel with pure Python ctypes wrapper
         run: |
-          cd pycodec2-src
+          # Pure Python ctypes wrapper avoids Cython/C extension symbol resolution
+          # issues on Android where linker namespace isolation prevents Python C API
+          # symbols from being found at dlopen time.
 
-          # Get the Android toolchain compiler
-          if [ "${{ matrix.cmake_abi }}" == "arm64-v8a" ]; then
-            COMPILER_PREFIX="aarch64-linux-android"
-          else
-            COMPILER_PREFIX="x86_64-linux-android"
-          fi
-
-          TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
-          export CC="$TOOLCHAIN/bin/${COMPILER_PREFIX}24-clang"
-          export CXX="$TOOLCHAIN/bin/${COMPILER_PREFIX}24-clang++"
-          export AR="$TOOLCHAIN/bin/llvm-ar"
-          export STRIP="$TOOLCHAIN/bin/llvm-strip"
-
-          # Get host Python include path (Python C API is stable across platforms)
-          PYTHON_INCLUDE=$(python -c "import sysconfig; print(sysconfig.get_path('include'))")
-          NUMPY_INCLUDE=$(python -c "import numpy; print(numpy.get_include())")
-
-          # Set up include/library paths
-          # -fPIC is required for shared libraries on Android
-          export CFLAGS="-I$CODEC2_INSTALL/include -I$PYTHON_INCLUDE -I$NUMPY_INCLUDE -fPIC"
-          export LDFLAGS="-L$CODEC2_INSTALL/lib -lcodec2 -shared"
-
-          # Generate the Cython extension
-          cd pycodec2
-          cython -3 pycodec2.pyx -o pycodec2.c
-
-          # Compile the extension
-          # Note: We don't link against libpython - it's loaded dynamically at runtime by Chaquopy
-          $CC $CFLAGS -c pycodec2.c -o pycodec2.o
-          $CC -shared pycodec2.o -o pycodec2.cpython-311-${{ matrix.python_arch }}-linux-android.so \
-            -L$CODEC2_INSTALL/lib -lcodec2
-
-          ls -la *.so
-
-      - name: Create wheel
-        run: |
           mkdir -p dist
           mkdir -p wheel_build/pycodec2
           cd wheel_build
 
-          # Copy the extension
-          cp ../pycodec2-src/pycodec2/*.so pycodec2/
-
           # Copy libcodec2.so
           cp $CODEC2_INSTALL/lib/libcodec2.so pycodec2/
 
-          # Create __init__.py that pre-loads libcodec2 using printf to avoid heredoc issues
-          printf '%s\n' \
-            "# Pre-load libcodec2.so before importing the extension module" \
-            "import os as _os" \
-            "import ctypes as _ctypes" \
-            "" \
-            "_this_dir = _os.path.dirname(_os.path.abspath(__file__))" \
-            "_libcodec2_path = _os.path.join(_this_dir, 'libcodec2.so')" \
-            "" \
-            "if _os.path.exists(_libcodec2_path):" \
-            "    try:" \
-            "        _ctypes.CDLL(_libcodec2_path, mode=_ctypes.RTLD_GLOBAL)" \
-            "    except OSError as e:" \
-            "        import sys" \
-            '        print(f"Warning: Could not load libcodec2.so: {e}", file=sys.stderr)' \
-            "" \
-            "from .pycodec2 import *" \
-            > pycodec2/__init__.py
+          # Create pure Python ctypes wrapper
+          cat > pycodec2/__init__.py << 'PYEOF'
+"""
+Pure Python wrapper for codec2 using ctypes.
+This avoids symbol resolution issues with Cython extensions on Android.
+"""
+import ctypes
+import os
+import sys
+import numpy as np
+
+# Codec2 C mode constants (from codec2.h)
+CODEC2_MODE_3200 = 0
+CODEC2_MODE_2400 = 1
+CODEC2_MODE_1600 = 2
+CODEC2_MODE_1400 = 3
+CODEC2_MODE_1300 = 4
+CODEC2_MODE_1200 = 5
+CODEC2_MODE_700C = 8
+CODEC2_MODE_450 = 10
+CODEC2_MODE_450PWB = 11
+
+# Bitrate to C mode constant mapping (for pycodec2 API compatibility)
+# pycodec2 accepts bitrate values like 700, 1200, etc. and maps them to C constants
+_modes = {
+    3200: CODEC2_MODE_3200,
+    2400: CODEC2_MODE_2400,
+    1600: CODEC2_MODE_1600,
+    1400: CODEC2_MODE_1400,
+    1300: CODEC2_MODE_1300,
+    1200: CODEC2_MODE_1200,
+    700: CODEC2_MODE_700C,
+    450: CODEC2_MODE_450,
+}
+
+_libcodec2 = None
+
+def _load_codec2():
+    global _libcodec2
+    if _libcodec2 is not None:
+        return _libcodec2
+
+    paths_to_try = []
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    paths_to_try.append(os.path.join(this_dir, 'libcodec2.so'))
+    paths_to_try.append('libcodec2.so')
+
+    for path in paths_to_try:
+        try:
+            _libcodec2 = ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+            break
+        except OSError:
+            continue
+
+    if _libcodec2 is None:
+        raise ImportError("Could not load libcodec2.so")
+
+    _libcodec2.codec2_create.argtypes = [ctypes.c_int]
+    _libcodec2.codec2_create.restype = ctypes.c_void_p
+    _libcodec2.codec2_destroy.argtypes = [ctypes.c_void_p]
+    _libcodec2.codec2_destroy.restype = None
+    _libcodec2.codec2_samples_per_frame.argtypes = [ctypes.c_void_p]
+    _libcodec2.codec2_samples_per_frame.restype = ctypes.c_int
+    _libcodec2.codec2_bits_per_frame.argtypes = [ctypes.c_void_p]
+    _libcodec2.codec2_bits_per_frame.restype = ctypes.c_int
+    _libcodec2.codec2_bytes_per_frame.argtypes = [ctypes.c_void_p]
+    _libcodec2.codec2_bytes_per_frame.restype = ctypes.c_int
+    _libcodec2.codec2_encode.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), ctypes.POINTER(ctypes.c_short)]
+    _libcodec2.codec2_encode.restype = None
+    _libcodec2.codec2_decode.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_short), ctypes.POINTER(ctypes.c_ubyte)]
+    _libcodec2.codec2_decode.restype = None
+
+    return _libcodec2
+
+class Codec2:
+    """Codec2 audio codec wrapper compatible with pycodec2 API."""
+    def __init__(self, mode):
+        """
+        Create a Codec2 instance.
+
+        Args:
+            mode: Bitrate value (700, 1200, 1300, 1400, 1600, 2400, 3200) or
+                  C mode constant (CODEC2_MODE_*)
+        """
+        lib = _load_codec2()
+
+        # Map bitrate to C mode constant if needed
+        if mode in _modes:
+            c_mode = _modes[mode]
+        else:
+            c_mode = mode  # Assume it's already a C mode constant
+
+        self._c2 = lib.codec2_create(c_mode)
+        if not self._c2:
+            raise RuntimeError(f"Failed to create Codec2 instance with mode {mode}")
+        self._mode = mode
+        self._c_mode = c_mode
+        self._lib = lib
+
+    def __del__(self):
+        if hasattr(self, '_c2') and self._c2 and hasattr(self, '_lib') and self._lib:
+            self._lib.codec2_destroy(self._c2)
+            self._c2 = None
+
+    def samples_per_frame(self):
+        return self._lib.codec2_samples_per_frame(self._c2)
+
+    def bits_per_frame(self):
+        return self._lib.codec2_bits_per_frame(self._c2)
+
+    def bytes_per_frame(self):
+        return self._lib.codec2_bytes_per_frame(self._c2)
+
+    def encode(self, speech):
+        speech = np.asarray(speech, dtype=np.int16)
+        speech_ptr = speech.ctypes.data_as(ctypes.POINTER(ctypes.c_short))
+        nbytes = self.bytes_per_frame()
+        bits = (ctypes.c_ubyte * nbytes)()
+        self._lib.codec2_encode(self._c2, bits, speech_ptr)
+        return bytes(bits)
+
+    def decode(self, bits):
+        bits_array = (ctypes.c_ubyte * len(bits))(*bits)
+        nsamples = self.samples_per_frame()
+        speech = (ctypes.c_short * nsamples)()
+        self._lib.codec2_decode(self._c2, speech, bits_array)
+        return np.array(speech, dtype=np.int16)
+PYEOF
 
           # Create METADATA
           mkdir -p pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info
-          printf "Metadata-Version: 2.1\nName: pycodec2\nVersion: ${{ env.PYCODEC2_VERSION }}\nSummary: Cython wrapper for codec2\n" \
+          printf "Metadata-Version: 2.1\nName: pycodec2\nVersion: ${{ env.PYCODEC2_VERSION }}\nSummary: Pure Python ctypes wrapper for codec2\n" \
             > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/METADATA
 
           printf "Wheel-Version: 1.0\nGenerator: manual-build\nRoot-Is-Purelib: false\nTag: cp311-cp311-android_21_${{ matrix.abi }}\n" \
@@ -180,7 +244,6 @@ jobs:
           printf "pycodec2\n" > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/top_level.txt
 
           # Create RECORD with proper sha256 hashes and sizes
-          # Function to compute hash,size for a file
           record_entry() {
             local file="$1"
             local path="$2"
@@ -189,16 +252,11 @@ jobs:
             echo "$path,sha256=$hash,$size"
           }
 
-          # Add entries for all files
           record_entry "pycodec2/__init__.py" "pycodec2/__init__.py" >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
           record_entry "pycodec2/libcodec2.so" "pycodec2/libcodec2.so" >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
-          for f in pycodec2/*.cpython*.so; do
-            [ -f "$f" ] && record_entry "$f" "pycodec2/$(basename $f)" >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
-          done
           record_entry "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/METADATA" "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/METADATA" >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
           record_entry "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/WHEEL" "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/WHEEL" >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
           record_entry "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/top_level.txt" "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/top_level.txt" >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
-          # RECORD file itself has no hash
           echo "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
 
           # Create the wheel
