@@ -114,7 +114,7 @@ jobs:
           # Download the target Python from Chaquopy's maven repo
           # Format: com/chaquo/python/target/{version}/target-{version}-{abi}.zip
           curl -fsSL -o python-target.zip \
-            "https://maven.chaquo.com/maven/com/chaquo/python/target/$PYTHON_VERSION-$CHAQUOPY_VERSION/target-$PYTHON_VERSION-$CHAQUOPY_VERSION-${{ matrix.abi }}.zip"
+            "https://chaquo.com/maven/com/chaquo/python/target/$PYTHON_VERSION-$CHAQUOPY_VERSION/target-$PYTHON_VERSION-$CHAQUOPY_VERSION-${{ matrix.abi }}.zip"
 
           unzip -q python-target.zip
           ls -la
