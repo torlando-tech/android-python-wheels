@@ -174,7 +174,7 @@ jobs:
           printf "Metadata-Version: 2.1\nName: pycodec2\nVersion: ${{ env.PYCODEC2_VERSION }}\nSummary: Cython wrapper for codec2\n" \
             > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/METADATA
 
-          printf "Wheel-Version: 1.0\nGenerator: manual-build\nRoot-Is-Purelib: false\nTag: cp311-cp311-android_24_${{ matrix.abi }}\n" \
+          printf "Wheel-Version: 1.0\nGenerator: manual-build\nRoot-Is-Purelib: false\nTag: cp311-cp311-android_21_${{ matrix.abi }}\n" \
             > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/WHEEL
 
           printf "pycodec2\n" > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/top_level.txt
@@ -202,7 +202,7 @@ jobs:
           echo "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
 
           # Create the wheel
-          WHEEL_NAME="pycodec2-${{ env.PYCODEC2_VERSION }}-cp311-cp311-android_24_${{ matrix.abi }}.whl"
+          WHEEL_NAME="pycodec2-${{ env.PYCODEC2_VERSION }}-cp311-cp311-android_21_${{ matrix.abi }}.whl"
           zip -r "../dist/$WHEEL_NAME" pycodec2 pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info
 
           echo "Built wheel: $WHEEL_NAME"
