@@ -28,8 +28,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Python 3.11 supports both 32-bit and 64-bit ABIs
-        abi: [arm64_v8a, armeabi_v7a, x86_64, x86]
+        # cibuildwheel for Android only supports 64-bit ABIs
+        abi: [arm64_v8a, x86_64]
 
     steps:
       - name: Checkout
@@ -87,7 +87,7 @@ jobs:
           skip = ""
 
           [tool.cibuildwheel.android]
-          archs = ["arm64_v8a", "armeabi_v7a", "x86_64", "x86"]
+          archs = ["arm64_v8a", "x86_64"]
 
           before-all = """
           set -ex
@@ -97,12 +97,8 @@ jobs:
               # Try to derive from CIBW_BUILD or other sources
               if echo "$CIBW_BUILD" | grep -q "arm64"; then
                   export ANDROID_ABI="arm64-v8a"
-              elif echo "$CIBW_BUILD" | grep -q "armeabi"; then
-                  export ANDROID_ABI="armeabi-v7a"
               elif echo "$CIBW_BUILD" | grep -q "x86_64"; then
                   export ANDROID_ABI="x86_64"
-              elif echo "$CIBW_BUILD" | grep -q "x86"; then
-                  export ANDROID_ABI="x86"
               else
                   echo "ERROR: Cannot determine ANDROID_ABI"
                   echo "CIBW_BUILD=$CIBW_BUILD"
@@ -228,9 +224,7 @@ jobs:
         run: |
           case "${{ matrix.abi }}" in
             arm64_v8a) echo "cmake_abi=arm64-v8a" >> $GITHUB_OUTPUT ;;
-            armeabi_v7a) echo "cmake_abi=armeabi-v7a" >> $GITHUB_OUTPUT ;;
             x86_64) echo "cmake_abi=x86_64" >> $GITHUB_OUTPUT ;;
-            x86) echo "cmake_abi=x86" >> $GITHUB_OUTPUT ;;
           esac
 
       - name: Build wheel with cibuildwheel
