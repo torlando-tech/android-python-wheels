@@ -179,15 +179,26 @@ jobs:
 
           printf "pycodec2\n" > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/top_level.txt
 
-          # Create RECORD (checksums)
-          echo "pycodec2/__init__.py,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
-          echo "pycodec2/libcodec2.so,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
-          for f in pycodec2/*.so; do
-            [ -f "$f" ] && echo "pycodec2/$(basename $f),," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
+          # Create RECORD with proper sha256 hashes and sizes
+          # Function to compute hash,size for a file
+          record_entry() {
+            local file="$1"
+            local path="$2"
+            local hash=$(sha256sum "$file" | cut -d' ' -f1 | xxd -r -p | base64 | tr '+/' '-_' | tr -d '=')
+            local size=$(stat -c%s "$file")
+            echo "$path,sha256=$hash,$size"
+          }
+
+          # Add entries for all files
+          record_entry "pycodec2/__init__.py" "pycodec2/__init__.py" >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
+          record_entry "pycodec2/libcodec2.so" "pycodec2/libcodec2.so" >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
+          for f in pycodec2/*.cpython*.so; do
+            [ -f "$f" ] && record_entry "$f" "pycodec2/$(basename $f)" >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
           done
-          echo "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/METADATA,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
-          echo "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/WHEEL,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
-          echo "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/top_level.txt,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
+          record_entry "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/METADATA" "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/METADATA" >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
+          record_entry "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/WHEEL" "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/WHEEL" >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
+          record_entry "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/top_level.txt" "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/top_level.txt" >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
+          # RECORD file itself has no hash
           echo "pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
 
           # Create the wheel
