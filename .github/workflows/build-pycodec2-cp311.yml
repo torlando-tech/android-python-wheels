@@ -150,44 +150,34 @@ jobs:
           # Copy libcodec2.so
           cp $CODEC2_INSTALL/lib/libcodec2.so pycodec2/
 
-          # Create __init__.py that pre-loads libcodec2
-          cat > pycodec2/__init__.py << 'INIT_EOF'
-# Pre-load libcodec2.so before importing the extension module
-import os as _os
-import ctypes as _ctypes
-
-_this_dir = _os.path.dirname(_os.path.abspath(__file__))
-_libcodec2_path = _os.path.join(_this_dir, 'libcodec2.so')
-
-if _os.path.exists(_libcodec2_path):
-    try:
-        _ctypes.CDLL(_libcodec2_path, mode=_ctypes.RTLD_GLOBAL)
-    except OSError as e:
-        import sys
-        print(f"Warning: Could not load libcodec2.so: {e}", file=sys.stderr)
-
-from .pycodec2 import *
-INIT_EOF
+          # Create __init__.py that pre-loads libcodec2 using printf to avoid heredoc issues
+          printf '%s\n' \
+            "# Pre-load libcodec2.so before importing the extension module" \
+            "import os as _os" \
+            "import ctypes as _ctypes" \
+            "" \
+            "_this_dir = _os.path.dirname(_os.path.abspath(__file__))" \
+            "_libcodec2_path = _os.path.join(_this_dir, 'libcodec2.so')" \
+            "" \
+            "if _os.path.exists(_libcodec2_path):" \
+            "    try:" \
+            "        _ctypes.CDLL(_libcodec2_path, mode=_ctypes.RTLD_GLOBAL)" \
+            "    except OSError as e:" \
+            "        import sys" \
+            '        print(f"Warning: Could not load libcodec2.so: {e}", file=sys.stderr)' \
+            "" \
+            "from .pycodec2 import *" \
+            > pycodec2/__init__.py
 
           # Create METADATA
           mkdir -p pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info
-          cat > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/METADATA << EOF
-Metadata-Version: 2.1
-Name: pycodec2
-Version: ${{ env.PYCODEC2_VERSION }}
-Summary: Cython wrapper for codec2
-EOF
+          printf "Metadata-Version: 2.1\nName: pycodec2\nVersion: ${{ env.PYCODEC2_VERSION }}\nSummary: Cython wrapper for codec2\n" \
+            > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/METADATA
 
-          cat > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/WHEEL << EOF
-Wheel-Version: 1.0
-Generator: manual-build
-Root-Is-Purelib: false
-Tag: cp311-cp311-android_24_${{ matrix.abi }}
-EOF
+          printf "Wheel-Version: 1.0\nGenerator: manual-build\nRoot-Is-Purelib: false\nTag: cp311-cp311-android_24_${{ matrix.abi }}\n" \
+            > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/WHEEL
 
-          cat > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/top_level.txt << EOF
-pycodec2
-EOF
+          printf "pycodec2\n" > pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/top_level.txt
 
           # Create RECORD (checksums)
           echo "pycodec2/__init__.py,," >> pycodec2-${{ env.PYCODEC2_VERSION }}.dist-info/RECORD
