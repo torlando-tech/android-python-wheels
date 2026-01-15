@@ -1,0 +1,283 @@
+name: Build pycodec2 for Android (Python 3.11)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      pycodec2_version:
+        description: 'pycodec2 version to build'
+        required: false
+        default: '4.1.1'
+      codec2_version:
+        description: 'Codec2 C library version'
+        required: false
+        default: '1.2.0'
+
+env:
+  PYCODEC2_VERSION: ${{ github.event.inputs.pycodec2_version || '4.1.1' }}
+  CODEC2_VERSION: ${{ github.event.inputs.codec2_version || '1.2.0' }}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Python 3.11 supports both 32-bit and 64-bit ABIs
+        abi: [arm64_v8a, armeabi_v7a, x86_64, x86]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install cibuildwheel and build tools
+        run: |
+          pip install cibuildwheel
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Download Codec2 source
+        run: |
+          # Use GitHub API to download release tarball (tag is 1.2.0 not v1.2.0)
+          curl -fsSL -H "Accept: application/vnd.github+json" \
+            -o codec2.tar.gz \
+            "https://api.github.com/repos/drowe67/codec2/tarball/refs/tags/${{ env.CODEC2_VERSION }}"
+          tar xzf codec2.tar.gz
+          # The extracted directory has a different name format from API
+          mv drowe67-codec2-* codec2-src
+          ls -la codec2-src/
+
+      - name: Download and prepare pycodec2 source
+        run: |
+          # Download from GitHub to get complete source
+          curl -fsSL -H "Accept: application/vnd.github+json" \
+            -o pycodec2.tar.gz \
+            "https://api.github.com/repos/gregorias/pycodec2/tarball/refs/tags/v${{ env.PYCODEC2_VERSION }}"
+          tar xzf pycodec2.tar.gz
+          mv gregorias-pycodec2-* pycodec2-src
+
+          # Verify source structure
+          ls -la pycodec2-src/
+          ls -la pycodec2-src/pycodec2/ || echo "pycodec2 dir not found"
+
+          # Create pyproject.toml for cibuildwheel
+          cd pycodec2-src
+
+          cat > pyproject.toml << 'PYPROJECT_EOF'
+          [build-system]
+          requires = ["setuptools>=61", "wheel", "cython>=0.29", "numpy>=1.20"]
+          build-backend = "setuptools.build_meta"
+
+          [project]
+          name = "pycodec2"
+          version = "4.1.1"
+
+          [tool.cibuildwheel]
+          build = "cp311-*"
+          skip = ""
+
+          [tool.cibuildwheel.android]
+          archs = ["arm64_v8a", "armeabi_v7a", "x86_64", "x86"]
+
+          before-all = """
+          set -ex
+
+          # Determine ANDROID_ABI from environment or derive from build identifier
+          if [ -z "$ANDROID_ABI" ]; then
+              # Try to derive from CIBW_BUILD or other sources
+              if echo "$CIBW_BUILD" | grep -q "arm64"; then
+                  export ANDROID_ABI="arm64-v8a"
+              elif echo "$CIBW_BUILD" | grep -q "armeabi"; then
+                  export ANDROID_ABI="armeabi-v7a"
+              elif echo "$CIBW_BUILD" | grep -q "x86_64"; then
+                  export ANDROID_ABI="x86_64"
+              elif echo "$CIBW_BUILD" | grep -q "x86"; then
+                  export ANDROID_ABI="x86"
+              else
+                  echo "ERROR: Cannot determine ANDROID_ABI"
+                  echo "CIBW_BUILD=$CIBW_BUILD"
+                  exit 1
+              fi
+          fi
+          echo "Using ANDROID_ABI=$ANDROID_ABI"
+
+          # Build Codec2 for Android in a subshell to avoid polluting environment
+          # The subshell allows us to unset LDFLAGS/CFLAGS without affecting the wheel build
+          (
+              # Unset build flags that would break the host tool compilation (codec2_native)
+              unset LDFLAGS
+              unset CFLAGS
+              unset LIBRARY_PATH
+              unset C_INCLUDE_PATH
+              unset CPLUS_INCLUDE_PATH
+
+              export CODEC2_INSTALL=/tmp/codec2-install
+              mkdir -p $CODEC2_INSTALL
+
+              cd codec2-src
+              mkdir -p build && cd build
+
+              cmake .. \
+                  -G Ninja \
+                  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+                  -DANDROID_ABI=$ANDROID_ABI \
+                  -DANDROID_NATIVE_API_LEVEL=21 \
+                  -DANDROID_STL=c++_shared \
+                  -DBUILD_SHARED_LIBS=ON \
+                  -DUNITTEST=OFF \
+                  -DINSTALL_EXAMPLES=OFF \
+                  -DCMAKE_BUILD_TYPE=Release \
+                  -DCMAKE_INSTALL_PREFIX=$CODEC2_INSTALL
+
+              ninja
+              ninja install
+              ls -la $CODEC2_INSTALL/lib/
+              ls -la $CODEC2_INSTALL/include/codec2/
+          )
+          """
+
+          environment = { LIBRARY_PATH = "/tmp/codec2-install/lib", C_INCLUDE_PATH = "/tmp/codec2-install/include", CPLUS_INCLUDE_PATH = "/tmp/codec2-install/include", LDFLAGS = "-L/tmp/codec2-install/lib -lcodec2", CFLAGS = "-I/tmp/codec2-install/include -include complex.h" }
+
+          before-build = """
+          set -ex
+          cd {package}
+          if [ -f setup.py ]; then
+              # Add codec2 include path and extra_compile_args for complex.h
+              # -Wno-implicit-function-declaration: Android NDK bionic's complex.h doesn't properly export creal/cimag at API 21
+              sed -i 's|include_dirs=\\[np.get_include()\\]|include_dirs=[np.get_include(), "/tmp/codec2-install/include"], extra_compile_args=["-include", "complex.h", "-Wno-implicit-function-declaration"]|' setup.py
+              # Update library_dirs to point to codec2 install
+              sed -i 's|library_dirs=\\["lib_win"\\] if sys.platform == "win32" else None|library_dirs=["/tmp/codec2-install/lib"]|' setup.py
+              cat setup.py
+          fi
+          """
+
+          repair-wheel-command = """
+          set -ex
+          # Bundle libcodec2.so into the wheel and fix library loading
+          unzip -q {wheel} -d wheel_tmp
+
+          pkg_dir=$(find wheel_tmp -name "pycodec2" -type d | head -1)
+          if [ -n "$pkg_dir" ]; then
+              cp /tmp/codec2-install/lib/libcodec2.so "$pkg_dir/" || echo "Warning: libcodec2.so not found"
+
+              # Create __init__.py that pre-loads libcodec2.so before importing extension
+              # This is needed because the extension has no RPATH and can't find the bundled library
+              cat > "$pkg_dir/__init__.py" << 'INIT_EOF'
+          # Pre-load libcodec2.so before importing the extension module
+          # This is needed on Android/Chaquopy where the library isn't in LD_LIBRARY_PATH
+          import os as _os
+          import ctypes as _ctypes
+
+          # Find and load libcodec2.so from the same directory as this module
+          _this_dir = _os.path.dirname(_os.path.abspath(__file__))
+          _libcodec2_path = _os.path.join(_this_dir, 'libcodec2.so')
+
+          if _os.path.exists(_libcodec2_path):
+              try:
+                  _ctypes.CDLL(_libcodec2_path, mode=_ctypes.RTLD_GLOBAL)
+              except OSError as e:
+                  # Log but don't fail - the extension might still work
+                  import sys
+                  print(f"Warning: Could not load libcodec2.so: {e}", file=sys.stderr)
+
+          # Now import the extension - libcodec2.so should be available
+          from .pycodec2 import *
+          INIT_EOF
+
+              # Update RECORD file with libcodec2.so entry and updated __init__.py
+              dist_info=$(find wheel_tmp -name "*.dist-info" -type d | head -1)
+              if [ -n "$dist_info" ] && [ -f "$pkg_dir/libcodec2.so" ]; then
+                  so_hash=$(sha256sum "$pkg_dir/libcodec2.so" | cut -d' ' -f1)
+                  so_size=$(stat -c%s "$pkg_dir/libcodec2.so")
+                  so_hash_b64=$(echo -n "$so_hash" | xxd -r -p | base64 | tr '+/' '-_' | tr -d '=')
+
+                  init_hash=$(sha256sum "$pkg_dir/__init__.py" | cut -d' ' -f1)
+                  init_size=$(stat -c%s "$pkg_dir/__init__.py")
+                  init_hash_b64=$(echo -n "$init_hash" | xxd -r -p | base64 | tr '+/' '-_' | tr -d '=')
+
+                  # Remove old __init__.py entry and add new ones
+                  sed -i '/pycodec2\\/__init__.py/d' "$dist_info/RECORD"
+                  sed -i "/^.*RECORD,,\\$/i pycodec2/libcodec2.so,sha256=$so_hash_b64,$so_size" "$dist_info/RECORD"
+                  sed -i "/^.*RECORD,,\\$/i pycodec2/__init__.py,sha256=$init_hash_b64,$init_size" "$dist_info/RECORD"
+              fi
+          fi
+
+          cd wheel_tmp
+          # Output repaired wheel to {dest_dir} as cibuildwheel expects
+          zip -q -r {dest_dir}/$(basename {wheel}) .
+          cd ..
+          rm -rf wheel_tmp
+          """
+          PYPROJECT_EOF
+
+          # Copy codec2-src to where the build can find it
+          cp -r ../codec2-src .
+
+      - name: Convert ABI name for CMake
+        id: abi
+        run: |
+          case "${{ matrix.abi }}" in
+            arm64_v8a) echo "cmake_abi=arm64-v8a" >> $GITHUB_OUTPUT ;;
+            armeabi_v7a) echo "cmake_abi=armeabi-v7a" >> $GITHUB_OUTPUT ;;
+            x86_64) echo "cmake_abi=x86_64" >> $GITHUB_OUTPUT ;;
+            x86) echo "cmake_abi=x86" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - name: Build wheel with cibuildwheel
+        env:
+          CIBW_BUILD: "cp311-android_${{ matrix.abi }}"
+          ANDROID_ABI: ${{ steps.abi.outputs.cmake_abi }}
+          CIBW_ENVIRONMENT_ANDROID: >-
+            ANDROID_ABI=${{ steps.abi.outputs.cmake_abi }}
+            LIBRARY_PATH=/tmp/codec2-install/lib
+            C_INCLUDE_PATH=/tmp/codec2-install/include
+            CPLUS_INCLUDE_PATH=/tmp/codec2-install/include
+            LDFLAGS="-L/tmp/codec2-install/lib -lcodec2"
+            CFLAGS="-I/tmp/codec2-install/include -include complex.h"
+        run: |
+          cd pycodec2-src
+          cibuildwheel --platform android --output-dir ../dist
+
+      - name: List built wheels
+        run: |
+          ls -la dist/ || echo "No dist directory"
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pycodec2-cp311-${{ matrix.abi }}
+          path: dist/*.whl
+          if-no-files-found: warn
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: wheels
+          merge-multiple: true
+
+      - name: List wheels
+        run: ls -la wheels/ || echo "No wheels found"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: wheels/*.whl
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
