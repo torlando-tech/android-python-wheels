@@ -80,6 +80,8 @@ jobs:
           cd codec2-src
           mkdir -p build && cd build
 
+          # Add flags to fix complex.h issues with Android NDK bionic
+          # -Wno-implicit-function-declaration: bionic's complex.h doesn't properly declare crealf/cimagf/etc
           cmake .. \
             -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
@@ -90,7 +92,8 @@ jobs:
             -DUNITTEST=OFF \
             -DINSTALL_EXAMPLES=OFF \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=$CODEC2_INSTALL
+            -DCMAKE_INSTALL_PREFIX=$CODEC2_INSTALL \
+            -DCMAKE_C_FLAGS="-Wno-implicit-function-declaration"
 
           ninja
           ninja install
